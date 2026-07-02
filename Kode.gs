@@ -228,7 +228,7 @@ function processForm(data) {
       const rM = totalMins % 60;
       totalJamStr = rH + "j " + rM + "m";
       
-      if (dateObj.getHours() >= 21 || rH >= 13) {
+      if (rH >= 13) {
         statusPulang = "LEMBUR";
       }
     }
@@ -424,6 +424,8 @@ function getLaporanBulanan(bulan) {
   const values = sheet.getDataRange().getValues();
   
   const summaryMap = {};
+  const outletMap = {};
+
   for (let i = 1; i < values.length; i++) {
     const tgl = parseSheetDate(values[i][0]); 
     if (mmFilter && !tgl.includes(mmFilter)) {
@@ -431,10 +433,13 @@ function getLaporanBulanan(bulan) {
     }
     
     const nama = values[i][1];
+    const posisi = values[i][2];
+    const outlet = values[i][3] || "Lainnya";
+    
     if (!summaryMap[nama]) {
       summaryMap[nama] = {
         nama: nama,
-        posisi: values[i][2], // index 2
+        posisi: posisi,
         totalMenitKerja: 0,
         jumlahJamLembur: 0,
         jumlahTelat: 0,
@@ -443,35 +448,80 @@ function getLaporanBulanan(bulan) {
       };
     }
     
+    if (outlet && outlet !== "-" && outlet.trim() !== "") {
+      if (!outletMap[outlet]) {
+        outletMap[outlet] = {
+          outlet: outlet,
+          totalMenitKerja: 0,
+          jumlahJamLembur: 0,
+          jumlahTelat: 0,
+          jumlahMasuk: 0,
+          jumlahIzin: 0,
+          pegawai: {}
+        };
+      }
+    }
+    
     const sts = summaryMap[nama];
     const statMasuk = values[i][7]; // index 7
     const statPulang = values[i][8]; // index 8
     const totJam = values[i][6]; // index 6
     
-    if (statMasuk === "IZIN") {
+    let isIzin = (statMasuk === "IZIN");
+    let isTelat = (statMasuk === "TELAT");
+    let menit = 0;
+    let lembur = 0;
+    
+    if (totJam && totJam !== "-") {
+      const parts = totJam.toString().match(/(\d+)j (\d+)m/);
+      if (parts && parts.length === 3) {
+        const rH = parseInt(parts[1]);
+        const rM = parseInt(parts[2]);
+        menit = (rH * 60) + rM;
+        if (rH >= 13) {
+          lembur = (rH - 12);
+        }
+      }
+    }
+    
+    if (isIzin) {
       sts.jumlahIzin += 1;
+      if (outlet && outletMap[outlet]) {
+        outletMap[outlet].jumlahIzin += 1;
+      }
     } else {
       sts.jumlahMasuk += 1;
-      if (statMasuk === "TELAT") {
+      if (isTelat) {
         sts.jumlahTelat += 1;
       }
-      if (totJam && totJam !== "-") {
-        const parts = totJam.toString().match(/(\d+)j (\d+)m/);
-        if (parts && parts.length === 3) {
-          const rH = parseInt(parts[1]);
-          const rM = parseInt(parts[2]);
-          sts.totalMenitKerja += (rH * 60) + rM;
-
-          // Perhitungan lembur baru:
-          // Lembur dimulai 13 jam kerja, dan bertambah 1 jam untuk setiap jam kerja di atas 12.
-          // Contoh: 
-          // - 12 jam 45 menit = 0 jam lembur (karena < 13 jam)
-          // - 13 jam 45 menit = 1 jam lembur (13 - 12)
-          // - 14 jam 45 menit = 2 jam lembur (14 - 12)
-          // - 12 jam 25 menit = 0 jam lembur (karena < 13 jam)
-          if (rH >= 13) {
-            sts.jumlahJamLembur += (rH - 12);
-          }
+      sts.totalMenitKerja += menit;
+      sts.jumlahJamLembur += lembur;
+      
+      if (outlet && outletMap[outlet]) {
+        const out = outletMap[outlet];
+        out.jumlahMasuk += 1;
+        if (isTelat) {
+          out.jumlahTelat += 1;
+        }
+        out.totalMenitKerja += menit;
+        out.jumlahJamLembur += lembur;
+        
+        if (!out.pegawai[nama]) {
+          out.pegawai[nama] = {
+            nama: nama,
+            posisi: posisi,
+            jumlahMasuk: 0,
+            totalMenitKerja: 0,
+            jumlahJamLembur: 0,
+            jumlahTelat: 0
+          };
+        }
+        const pStats = out.pegawai[nama];
+        pStats.jumlahMasuk += 1;
+        pStats.totalMenitKerja += menit;
+        pStats.jumlahJamLembur += lembur;
+        if (isTelat) {
+          pStats.jumlahTelat += 1;
         }
       }
     }
@@ -484,7 +534,23 @@ function getLaporanBulanan(bulan) {
     sts.totalJamKerja = totJamLabel;
     hasil.push(sts);
   }
-  return { status: "success", data: hasil };
+  
+  const hasilOutlet = [];
+  for (let key in outletMap) {
+    const out = outletMap[key];
+    out.totalJamKerja = Math.floor(out.totalMenitKerja / 60) + "j " + (out.totalMenitKerja % 60) + "m";
+    
+    const pegList = [];
+    for (let pKey in out.pegawai) {
+      const peg = out.pegawai[pKey];
+      peg.totalJamKerja = Math.floor(peg.totalMenitKerja / 60) + "j " + (peg.totalMenitKerja % 60) + "m";
+      pegList.push(peg);
+    }
+    out.daftarPegawai = pegList;
+    hasilOutlet.push(out);
+  }
+  
+  return { status: "success", data: hasil, dataOutlet: hasilOutlet };
 }
 
 function getRiwayatBulan(nama, bulan) {

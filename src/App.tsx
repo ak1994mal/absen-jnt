@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, MapPin, Send, AlertCircle, LocateFixed, CheckCircle2, FileImage, ClipboardList, History, Users, Bell, X, LogOut, RefreshCw, BarChart3, CalendarDays, Clock, ExternalLink } from 'lucide-react';
+import { Camera, MapPin, Send, AlertCircle, LocateFixed, CheckCircle2, FileImage, ClipboardList, History, Users, Bell, X, LogOut, RefreshCw, BarChart3, CalendarDays, Clock, ExternalLink, Store } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import OutletMapManager from './components/OutletMapManager';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
@@ -16,6 +16,58 @@ const getMapEmbedUrl = (url?: string) => {
     return `https://maps.google.com/maps?q=${match[1]},${match[2]}&t=&z=14&ie=UTF8&iwloc=&output=embed`;
   }
   return null;
+};
+
+
+const getSummaryByPosition = (rows: any[]) => {
+  const summary: Record<string, {
+    posisi: string;
+    totalMenit: number;
+    jumlahMasuk: number;
+    jumlahTelat: number;
+    jumlahIzin: number;
+    jumlahLembur: number;
+  }> = {};
+
+  rows.forEach(row => {
+    const pos = row.posisi || "Tidak Diketahui";
+    if (!summary[pos]) {
+      summary[pos] = {
+        posisi: pos,
+        totalMenit: 0,
+        jumlahMasuk: 0,
+        jumlahTelat: 0,
+        jumlahIzin: 0,
+        jumlahLembur: 0
+      };
+    }
+
+    const item = summary[pos];
+    if (row.keterangan === 'IZIN' || row.statusMasuk === 'IZIN') {
+      item.jumlahIzin += 1;
+    } else {
+      item.jumlahMasuk += 1;
+      if (row.statusMasuk && row.statusMasuk.toUpperCase().includes('TELAT')) {
+        item.jumlahTelat += 1;
+      }
+
+      const totJam = row.totalJam;
+      if (totJam && totJam !== "-") {
+        const parts = String(totJam).match(/(\d+)j (\d+)m/);
+        if (parts && parts.length === 3) {
+          const rH = parseInt(parts[1]);
+          const rM = parseInt(parts[2]);
+          item.totalMenit += (rH * 60) + rM;
+
+          if (rH >= 13) {
+            item.jumlahLembur += (rH - 12);
+          }
+        }
+      }
+    }
+  });
+
+  return Object.values(summary);
 };
 
 
@@ -204,11 +256,17 @@ export default function App() {
 
 
   const [laporanBulanan, setLaporanBulanan] = useState<any[]>([]);
+  const [laporanBulananOutlet, setLaporanBulananOutlet] = useState<any[]>([]);
   const [loadingLaporan, setLoadingLaporan] = useState(false);
   const [ownerView, setOwnerView] = useState<'harian' | 'bulanan' | 'settings'>('harian');
+  const [laporanBulananSubView, setLaporanBulananSubView] = useState<'pegawai' | 'outlet'>('pegawai');
   const [targetJamKerja, setTargetJamKerja] = useState<number>(12);
   const [laporanPosisiFilter, setLaporanPosisiFilter] = useState<'Semua' | 'Admin' | 'Pickup'>('Semua');
   const [laporanBulan, setLaporanBulan] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+  });
+  const [riwayatBulan, setRiwayatBulan] = useState<string>(() => {
     const d = new Date();
     return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
   });
@@ -493,7 +551,7 @@ export default function App() {
   }, [GAS_URL, activeTab]);
 
 
-  const fetchRiwayat = async (pegawaiName: string) => {
+  const fetchRiwayat = async (pegawaiName: string, bulan: string = riwayatBulan) => {
     setLoadingRiwayat(true);
     setErrorRiwayat("");
     if (!GAS_URL) {
@@ -509,8 +567,8 @@ export default function App() {
 
 
     try {
-      console.log(`[fetchRiwayat] Mendapatkan riwayat untuk ${pegawaiName}...`);
-      const res = await fetchWithRetry(`${GAS_URL}?action=getRiwayat&nama=${encodeURIComponent(pegawaiName)}`);
+      console.log(`[fetchRiwayat] Mendapatkan riwayat untuk ${pegawaiName} bulan ${bulan}...`);
+      const res = await fetchWithRetry(`${GAS_URL}?action=getRiwayatBulan&nama=${encodeURIComponent(pegawaiName)}&bulan=${bulan}`);
       const textData = await res.text();
       console.log(`[fetchRiwayat] Response raw text:`, textData);
       
@@ -641,6 +699,30 @@ export default function App() {
             jumlahMasuk: 18
           },
         ]);
+        setLaporanBulananOutlet([
+          {
+            outlet: "YZ_ MDP PASIR JAHA BALARAJA",
+            totalJamKerja: "145j 30m",
+            jumlahJamLembur: 3,
+            jumlahTelat: 2,
+            jumlahMasuk: 20,
+            jumlahIzin: 0,
+            daftarPegawai: [
+              { nama: "Mohammad Danang", posisi: "Admin", totalJamKerja: "145j 30m", jumlahJamLembur: 3, jumlahTelat: 2, jumlahMasuk: 20 }
+            ]
+          },
+          {
+            outlet: "YZ_ MDP JAYANTI CIKANDE",
+            totalJamKerja: "135j 15m",
+            jumlahJamLembur: 0,
+            jumlahTelat: 5,
+            jumlahMasuk: 18,
+            jumlahIzin: 1,
+            daftarPegawai: [
+              { nama: "Fitri Fajria", posisi: "Pickup", totalJamKerja: "135j 15m", jumlahJamLembur: 0, jumlahTelat: 5, jumlahMasuk: 18 }
+            ]
+          }
+        ]);
         setLoadingLaporan(false);
       }, 800);
       return;
@@ -657,6 +739,7 @@ export default function App() {
       if (data.status === 'success') {
         console.log(`[fetchLaporanBulanan] Berhasil mendapatkan laporan ${data.data?.length} pegawai.`);
         setLaporanBulanan(data.data);
+        setLaporanBulananOutlet(data.dataOutlet || []);
       } else {
         console.error(`[fetchLaporanBulanan] Server Error: ${data.message}`);
         throw new Error(data.message || 'Unknown error');
@@ -837,9 +920,9 @@ export default function App() {
 
   useEffect(() => {
     if (activeTab === 'absen' && nama) {
-      fetchRiwayat(nama);
+      fetchRiwayat(nama, riwayatBulan);
     }
-  }, [nama, activeTab]);
+  }, [nama, activeTab, riwayatBulan]);
 
 
   useEffect(() => {
@@ -1139,7 +1222,7 @@ export default function App() {
 
   const handleOwnerLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (ownerPasswordInput === "admin123") {
+    if (ownerPasswordInput === "jntowner") {
       setIsOwnerLoggedIn(true);
       localStorage.setItem("isOwnerLoggedIn", "true");
       setOwnerLoginError("");
@@ -1483,12 +1566,25 @@ export default function App() {
       {/* Riwayat Pribadi */}
       {nama && activeTab === 'absen' && (
         <div id="riwayat-absen" className="w-full max-w-md mt-6 bg-white border border-neutral-200 rounded-xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="bg-neutral-50 px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
+          <div className="bg-neutral-50 px-4 py-3 border-b border-neutral-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="font-bold text-neutral-700 flex items-center gap-2 text-sm">
               <History className="w-4 h-4 text-[#cc0000]" />
-              Riwayat Absensi Bulan Ini
+              Riwayat Absensi
             </div>
-            <button onClick={() => fetchRiwayat(nama)} className="text-xs text-neutral-500 hover:text-neutral-800 underline">Refresh</button>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <input 
+                type="month" 
+                value={riwayatBulan} 
+                onChange={(e) => setRiwayatBulan(e.target.value)}
+                className="p-1 px-2 text-xs bg-white border border-neutral-300 rounded-md focus:ring-2 focus:ring-[#cc0000] outline-none font-medium text-neutral-700 h-[30px]"
+              />
+              <button 
+                onClick={() => fetchRiwayat(nama, riwayatBulan)} 
+                className="text-xs text-neutral-500 hover:text-neutral-800 hover:underline font-bold bg-white border border-neutral-200 px-2.5 h-[30px] rounded-md transition shadow-sm"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
           
           {!loadingRiwayat && !errorRiwayat && riwayat.length > 0 && (
@@ -1562,7 +1658,16 @@ export default function App() {
                 <tbody>
                   {riwayat.map((r, i) => (
                     <tr key={i} className="border-t border-neutral-100 last:border-0 hover:bg-neutral-50">
-                      <td className="px-4 py-3 align-middle font-medium text-neutral-600">{r.tanggal}</td>
+                      <td className="px-4 py-3 align-middle">
+                        <div className="flex flex-col gap-0.5 items-start">
+                          <span className="font-medium text-neutral-600">{r.tanggal}</span>
+                          {r.posisi && (
+                            <span className="bg-red-50 text-[#cc0000] px-1.5 py-0.5 rounded font-extrabold text-[9px] uppercase tracking-wider">
+                              {r.posisi}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 align-middle">
                         <div className="flex flex-col gap-1 items-start">
                           <span className="font-mono font-bold text-neutral-800 text-sm">{r.jamDatang || '-'}</span>
@@ -2032,9 +2137,7 @@ export default function App() {
                          Refresh
                        </button>
                     </div>
-                  </div>
-                  
-                  {errorLaporan && (
+                  </div>                  {errorLaporan && (
                     <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-center justify-between">
                       <span className="text-sm font-medium">{errorLaporan}</span>
                       <button onClick={() => fetchLaporanBulanan(laporanBulan)} className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-bold rounded transition">
@@ -2042,6 +2145,26 @@ export default function App() {
                       </button>
                     </div>
                   )}
+
+                  {/* Sub-Tabs: Pegawai vs Outlet */}
+                  <div className="flex bg-neutral-100 p-1 rounded-lg w-fit mb-5 font-sans border border-neutral-200">
+                    <button
+                      type="button"
+                      onClick={() => setLaporanBulananSubView('pegawai')}
+                      className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 ${laporanBulananSubView === 'pegawai' ? 'bg-white text-[#cc0000] shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      Analisis Pegawai
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLaporanBulananSubView('outlet')}
+                      className={`px-4 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1.5 ${laporanBulananSubView === 'outlet' ? 'bg-white text-[#cc0000] shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}
+                    >
+                      <Store className="w-3.5 h-3.5" />
+                      Performa Cabang (Outlet)
+                    </button>
+                  </div>
                   
                   <div className="w-full">
                   {loadingLaporan ? (
@@ -2050,153 +2173,267 @@ export default function App() {
                     <div className="text-center text-neutral-500 py-10 border border-neutral-200 rounded-lg">Belum ada data bulan ini.</div>
                   ) : (
                     <>
-                    {/* Chart Visualization */}
-                    <div className="mb-6 bg-white border border-neutral-200 rounded-xl p-5 shadow-sm">
-                      <h3 className="text-neutral-700 font-bold text-sm mb-4 flex items-center gap-1.5">
-                        <BarChart3 className="w-4 h-4 text-[#cc0000]" />
-                        Visualisasi Total vs Target Jam Kerja ({laporanBulan})
-                      </h3>
-                      <div className="w-full h-80">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={laporanBulanan
-                              .filter(row => laporanPosisiFilter === 'Semua' || row.posisi === laporanPosisiFilter)
-                              .map(row => {
-                                const totalHours = typeof row.totalMenitKerja === 'number'
-                                  ? Number((row.totalMenitKerja / 60).toFixed(1))
-                                  : 0;
-                                const targetHours = (row.jumlahMasuk || 0) * 13;
-                                return {
-                                  nama: row.nama,
-                                  "Total Kerja": totalHours,
-                                  "Target Kerja": targetHours,
-                                };
-                              })
-                            }
-                            margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                            <XAxis 
-                              dataKey="nama" 
-                              tick={{ fill: '#6b7280', fontSize: 11 }}
-                              axisLine={{ stroke: '#e5e7eb' }}
-                              tickLine={false}
-                            />
-                            <YAxis 
-                              tick={{ fill: '#6b7280', fontSize: 11 }}
-                              axisLine={{ stroke: '#e5e7eb' }}
-                              tickLine={false}
-                              unit="j"
-                            />
-                            <Tooltip 
-                              contentStyle={{ 
-                                backgroundColor: '#ffffff', 
-                                borderRadius: '8px', 
-                                borderColor: '#e5e7eb',
-                                fontSize: '12px',
-                                fontFamily: 'Inter, sans-serif'
-                              }} 
-                              formatter={(value) => [`${value} jam`]}
-                            />
-                            <Legend 
-                              verticalAlign="top" 
-                              height={36}
-                              iconType="circle"
-                              iconSize={8}
-                              wrapperStyle={{ fontSize: '11px', fontFamily: 'Inter, sans-serif' }}
-                            />
-                            <Bar dataKey="Total Kerja" fill="#cc0000" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                            <Bar dataKey="Target Kerja" fill="#9ca3af" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                          </BarChart>
-                        </ResponsiveContainer>
+                    {laporanBulananSubView === 'pegawai' ? (
+                      <>
+                      {/* Chart Visualization */}
+                      <div className="mb-6 bg-white border border-neutral-200 rounded-xl p-5 shadow-sm">
+                        <h3 className="text-neutral-700 font-bold text-sm mb-4 flex items-center gap-1.5">
+                          <BarChart3 className="w-4 h-4 text-[#cc0000]" />
+                          Visualisasi Total vs Target Jam Kerja ({laporanBulan})
+                        </h3>
+                        <div className="w-full h-80">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={laporanBulanan
+                                .filter(row => laporanPosisiFilter === 'Semua' || row.posisi === laporanPosisiFilter)
+                                .map(row => {
+                                  const totalHours = typeof row.totalMenitKerja === 'number'
+                                    ? Number((row.totalMenitKerja / 60).toFixed(1))
+                                    : 0;
+                                  const targetHours = (row.jumlahMasuk || 0) * 13;
+                                  return {
+                                    nama: row.nama,
+                                    "Total Kerja": totalHours,
+                                    "Target Kerja": targetHours,
+                                  };
+                                })
+                              }
+                              margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                              <XAxis 
+                                dataKey="nama" 
+                                tick={{ fill: '#6b7280', fontSize: 11 }}
+                                axisLine={{ stroke: '#e5e7eb' }}
+                                tickLine={false}
+                              />
+                              <YAxis 
+                                tick={{ fill: '#6b7280', fontSize: 11 }}
+                                axisLine={{ stroke: '#e5e7eb' }}
+                                tickLine={false}
+                                unit="j"
+                              />
+                              <Tooltip 
+                                contentStyle={{ 
+                                  backgroundColor: '#ffffff', 
+                                  borderRadius: '8px', 
+                                  borderColor: '#e5e7eb',
+                                  fontSize: '12px',
+                                  fontFamily: 'Inter, sans-serif'
+                                }} 
+                                formatter={(value) => [`${value} jam`]}
+                              />
+                              <Legend 
+                                verticalAlign="top" 
+                                height={36}
+                                iconType="circle"
+                                iconSize={8}
+                                wrapperStyle={{ fontSize: '11px', fontFamily: 'Inter, sans-serif' }}
+                              />
+                              <Bar dataKey="Total Kerja" fill="#cc0000" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                              <Bar dataKey="Target Kerja" fill="#9ca3af" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Desktop Table View */}
-                    <div className="hidden md:block overflow-x-auto border border-neutral-200 rounded-lg">
-                      <table className="w-full text-sm text-left whitespace-nowrap min-w-[600px]">
-                        <thead className="text-xs text-neutral-500 uppercase bg-neutral-50 border-b border-neutral-200">
-                          <tr>
-                            <th className="px-5 py-4 font-semibold">Data Pegawai</th>
-                            <th className="px-5 py-4 font-semibold">Total Jam Kerja</th>
-                            <th className="px-5 py-4 font-semibold border-x border-neutral-200 bg-neutral-100/50">Total Lembur</th>
-                            <th className="px-5 py-4 font-semibold">Jumlah Kehadiran</th>
-                            <th className="px-5 py-4 font-semibold text-center">Keterlambatan</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {laporanBulanan.filter(row => laporanPosisiFilter === 'Semua' || row.posisi === laporanPosisiFilter).map((row, idx) => (
-                            <tr key={idx} onClick={() => fetchDetailRiwayat(row.nama, laporanBulan)} className="border-b border-neutral-100 last:border-0 hover:bg-red-50 align-top cursor-pointer transition">
-                              <td className="px-5 py-4">
-                                <div className="font-bold text-neutral-800">{row.nama}</div>
-                                {row.posisi && <div className="text-xs font-semibold text-[#cc0000] mt-0.5">{row.posisi}</div>}
-                              </td>
-                              <td className="px-5 py-4">
-                                <div className="font-mono font-medium text-neutral-700">{row.totalJamKerja || "0j 0m"}</div>
-                              </td>
-                              <td className="px-5 py-4 border-x border-neutral-200">
-                                <div className="font-mono font-bold text-[#cc0000]">{row.jumlahJamLembur ? `${row.jumlahJamLembur} jam` : "0 jam"}</div>
-                              </td>
-                              <td className="px-5 py-4">
-                                <div className="font-medium text-neutral-700">{row.jumlahMasuk || 0} hari</div>
-                              </td>
-                              <td className="px-5 py-4 text-center">
+                      {/* Desktop Table View */}
+                      <div className="hidden md:block overflow-x-auto border border-neutral-200 rounded-lg bg-white shadow-sm">
+                        <table className="w-full text-sm text-left whitespace-nowrap min-w-[600px]">
+                          <thead className="text-xs text-neutral-500 uppercase bg-neutral-50 border-b border-neutral-200">
+                            <tr>
+                              <th className="px-5 py-4 font-semibold">Data Pegawai</th>
+                              <th className="px-5 py-4 font-semibold">Total Jam Kerja</th>
+                              <th className="px-5 py-4 font-semibold border-x border-neutral-200 bg-neutral-100/50">Total Lembur</th>
+                              <th className="px-5 py-4 font-semibold">Jumlah Kehadiran</th>
+                              <th className="px-5 py-4 font-semibold text-center">Keterlambatan</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {laporanBulanan.filter(row => laporanPosisiFilter === 'Semua' || row.posisi === laporanPosisiFilter).map((row, idx) => (
+                              <tr key={idx} onClick={() => fetchDetailRiwayat(row.nama, laporanBulan)} className="border-b border-neutral-100 last:border-0 hover:bg-red-50 align-top cursor-pointer transition">
+                                <td className="px-5 py-4">
+                                  <div className="font-bold text-neutral-800">{row.nama}</div>
+                                  {row.posisi && <div className="text-xs font-semibold text-[#cc0000] mt-0.5">{row.posisi}</div>}
+                                </td>
+                                <td className="px-5 py-4">
+                                  <div className="font-mono font-medium text-neutral-700">{row.totalJamKerja || "0j 0m"}</div>
+                                </td>
+                                <td className="px-5 py-4 border-x border-neutral-200">
+                                  <div className="font-mono font-bold text-[#cc0000]">{row.jumlahJamLembur ? `${row.jumlahJamLembur} jam` : "0 jam"}</div>
+                                </td>
+                                <td className="px-5 py-4">
+                                  <div className="font-medium text-neutral-700">{row.jumlahMasuk || 0} hari</div>
+                                </td>
+                                <td className="px-5 py-4 text-center">
+                                  {row.jumlahTelat > 0 ? (
+                                    <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-red-100 text-red-700">
+                                      {row.jumlahTelat} kali
+                                    </span>
+                                  ) : (
+                                    <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-green-100 text-green-700">
+                                      Tepat Waktu
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Mobile Card View */}
+                      <div className="md:hidden flex flex-col gap-4">
+                        {laporanBulanan.filter(row => laporanPosisiFilter === 'Semua' || row.posisi === laporanPosisiFilter).map((row, idx) => (
+                          <div key={idx} onClick={() => fetchDetailRiwayat(row.nama, laporanBulan)} className="bg-white border border-neutral-200 rounded-xl p-4 shadow-sm flex flex-col gap-4 cursor-pointer hover:border-[#cc0000] focus:ring focus:ring-red-100 transition">
+                            <div className="flex justify-between items-start border-b border-neutral-100 pb-3">
+                              <div>
+                                <div className="font-bold text-neutral-800 text-base">{row.nama}</div>
+                                {row.posisi && <div className="text-[11px] font-bold text-[#cc0000] mt-0.5">{row.posisi}</div>}
+                              </div>
+                              <div className="text-right">
                                 {row.jumlahTelat > 0 ? (
-                                  <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-red-100 text-red-700">
-                                    {row.jumlahTelat} kali
+                                  <span className="px-2.5 py-1.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 flex items-center gap-1">
+                                    <AlertCircle className="w-3.5 h-3.5" /> Telat {row.jumlahTelat}x
                                   </span>
                                 ) : (
-                                  <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-green-100 text-green-700">
-                                    Tepat Waktu
+                                  <span className="px-2.5 py-1.5 rounded-md text-[10px] font-bold bg-green-100 text-green-700 flex items-center gap-1">
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> Tepat Waktu
                                   </span>
                                 )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-
-                    {/* Mobile Card View */}
-                    <div className="md:hidden flex flex-col gap-4">
-                      {laporanBulanan.filter(row => laporanPosisiFilter === 'Semua' || row.posisi === laporanPosisiFilter).map((row, idx) => (
-                        <div key={idx} onClick={() => fetchDetailRiwayat(row.nama, laporanBulan)} className="bg-white border border-neutral-200 rounded-xl p-4 shadow-sm flex flex-col gap-4 cursor-pointer hover:border-[#cc0000] focus:ring focus:ring-red-100 transition">
-                          <div className="flex justify-between items-start border-b border-neutral-100 pb-3">
-                            <div>
-                              <div className="font-bold text-neutral-800 text-base">{row.nama}</div>
-                              {row.posisi && <div className="text-[11px] font-bold text-[#cc0000] mt-0.5">{row.posisi}</div>}
+                              </div>
                             </div>
-                            <div className="text-right">
-                              {row.jumlahTelat > 0 ? (
-                                <span className="px-2.5 py-1.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 flex items-center gap-1">
-                                  <AlertCircle className="w-3.5 h-3.5" /> Telat {row.jumlahTelat}x
-                                </span>
-                              ) : (
-                                <span className="px-2.5 py-1.5 rounded-md text-[10px] font-bold bg-green-100 text-green-700 flex items-center gap-1">
-                                  <CheckCircle2 className="w-3.5 h-3.5" /> Tepat Waktu
-                                </span>
-                              )}
+                            
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="bg-neutral-50 px-2 py-3 rounded-lg border border-neutral-100 text-center flex flex-col justify-center">
+                                <p className="text-[10px] text-neutral-500 font-semibold mb-0.5">KEHADIRAN</p>
+                                <p className="font-bold text-sm text-neutral-800">{row.jumlahMasuk || 0} hr</p>
+                              </div>
+                              <div className="bg-neutral-50 px-2 py-3 rounded-lg border border-neutral-100 text-center flex flex-col justify-center">
+                                <p className="text-[10px] text-neutral-500 font-semibold mb-0.5">TOT. KERJA</p>
+                                <p className="font-mono font-bold text-sm text-neutral-800">{row.totalJamKerja || "0j 0m"}</p>
+                              </div>
+                              <div className="bg-[#fff8f8] px-2 py-3 rounded-lg border border-[#ffdada] text-center flex flex-col justify-center">
+                                <p className="text-[10px] text-[#cc0000] font-semibold mb-0.5">LEMBUR</p>
+                                <p className="font-mono font-bold text-sm text-[#cc0000]">{row.jumlahJamLembur ? `${row.jumlahJamLembur} jam` : "0 jam"}</p>
+                              </div>
                             </div>
                           </div>
-                          
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="bg-neutral-50 px-2 py-3 rounded-lg border border-neutral-100 text-center flex flex-col justify-center">
-                              <p className="text-[10px] text-neutral-500 font-semibold mb-0.5">KEHADIRAN</p>
-                              <p className="font-bold text-sm text-neutral-800">{row.jumlahMasuk || 0} hr</p>
-                            </div>
-                            <div className="bg-neutral-50 px-2 py-3 rounded-lg border border-neutral-100 text-center flex flex-col justify-center">
-                              <p className="text-[10px] text-neutral-500 font-semibold mb-0.5">TOT. KERJA</p>
-                              <p className="font-mono font-bold text-sm text-neutral-800">{row.totalJamKerja || "0j 0m"}</p>
-                            </div>
-                            <div className="bg-[#fff8f8] px-2 py-3 rounded-lg border border-[#ffdada] text-center flex flex-col justify-center">
-                              <p className="text-[10px] text-[#cc0000] font-semibold mb-0.5">LEMBUR</p>
-                              <p className="font-mono font-bold text-sm text-[#cc0000]">{row.jumlahJamLembur ? `${row.jumlahJamLembur} jam` : "0 jam"}</p>
-                            </div>
+                        ))}
+                      </div>
+                      </>
+                    ) : (
+                      /* Outlet Performance Grouped View */
+                      <div className="grid grid-cols-1 gap-6 font-sans">
+                        {laporanBulananOutlet.length === 0 ? (
+                          <div className="text-center text-neutral-500 py-12 border border-neutral-200 rounded-2xl bg-white shadow-sm flex flex-col items-center justify-center">
+                            <Store className="w-10 h-10 text-neutral-300 mb-2.5" />
+                            <p className="text-sm font-semibold text-neutral-700">Data outlet belum tersedia untuk bulan ini.</p>
+                            <p className="text-xs text-neutral-400 mt-1 max-w-[280px]">Pastikan pegawai Anda sudah melakukan absensi pada bulan yang dipilih.</p>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ) : (
+                          laporanBulananOutlet.map((out, idx) => (
+                            <div key={idx} className="bg-white border border-neutral-200 rounded-2xl shadow-sm overflow-hidden border-t-4 border-t-[#cc0000] transition hover:shadow-md">
+                              {/* Header Card */}
+                              <div className="bg-neutral-50/50 p-5 border-b border-neutral-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="p-2.5 bg-red-50 text-[#cc0000] rounded-xl border border-red-100">
+                                    <Store className="w-6 h-6" />
+                                  </div>
+                                  <div>
+                                    <h4 className="font-bold text-neutral-800 text-lg leading-snug">{out.outlet}</h4>
+                                    <p className="text-xs text-neutral-500 font-semibold flex items-center gap-1 mt-0.5">
+                                      <Users className="w-3.5 h-3.5 text-[#cc0000]" />
+                                      {out.daftarPegawai?.length || 0} Pegawai Aktif Bulan Ini
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2.5 self-start md:self-auto bg-white p-2 rounded-xl border border-neutral-100 shadow-sm">
+                                  <span className="text-[11px] text-neutral-400 font-bold uppercase tracking-wider pl-1">Total Jam Kerja Cabang:</span>
+                                  <span className="font-mono font-bold text-xs text-neutral-850 bg-neutral-100 px-2.5 py-1 rounded-md">
+                                    {out.totalJamKerja || "0j 0m"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Stats Bento Grid */}
+                              <div className="p-5 grid grid-cols-2 sm:grid-cols-4 gap-3 bg-neutral-50/30 border-b border-neutral-100">
+                                <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-sm">
+                                  <p className="text-[10px] font-bold text-neutral-450 uppercase tracking-wider mb-1">TOTAL MASUK</p>
+                                  <p className="text-xl font-black text-emerald-600">{out.jumlahMasuk || 0} <span className="text-xs font-normal text-neutral-500">Hari</span></p>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-sm">
+                                  <p className="text-[10px] font-bold text-neutral-450 uppercase tracking-wider mb-1">TOTAL LEMBUR</p>
+                                  <p className="text-xl font-black text-purple-600">{out.jumlahJamLembur || 0} <span className="text-xs font-normal text-neutral-500">Jam</span></p>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-sm">
+                                  <p className="text-[10px] font-bold text-neutral-450 uppercase tracking-wider mb-1">TOTAL TELAT</p>
+                                  <p className="text-xl font-black text-red-500">{out.jumlahTelat || 0} <span className="text-xs font-normal text-neutral-500">Kali</span></p>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-sm">
+                                  <p className="text-[10px] font-bold text-neutral-450 uppercase tracking-wider mb-1">TOTAL IZIN/SAKIT</p>
+                                  <p className="text-xl font-black text-amber-500">{out.jumlahIzin || 0} <span className="text-xs font-normal text-neutral-500">Hari</span></p>
+                                </div>
+                              </div>
+
+                              {/* Employees Under This Outlet */}
+                              <div className="p-5">
+                                <h5 className="font-bold text-neutral-700 text-sm mb-3.5 flex items-center gap-1.5">
+                                  <ClipboardList className="w-4 h-4 text-[#cc0000]" />
+                                  Kontribusi Kerja Pegawai di Cabang Ini
+                                </h5>
+                                <div className="overflow-x-auto border border-neutral-200 rounded-xl bg-white shadow-sm">
+                                  <table className="w-full text-xs text-left whitespace-nowrap">
+                                    <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 uppercase tracking-wider font-bold">
+                                      <tr>
+                                        <th className="px-4 py-3">Nama Pegawai</th>
+                                        <th className="px-4 py-3">Posisi</th>
+                                        <th className="px-4 py-3">Kehadiran</th>
+                                        <th className="px-4 py-3">Durasi Kerja</th>
+                                        <th className="px-4 py-3">Total Lembur</th>
+                                        <th className="px-4 py-3">Keterlambatan</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-neutral-100 font-medium text-neutral-700">
+                                      {out.daftarPegawai && out.daftarPegawai.length > 0 ? (
+                                        out.daftarPegawai.map((peg: any, pIdx: number) => (
+                                          <tr key={pIdx} className="hover:bg-red-50 cursor-pointer transition" onClick={() => fetchDetailRiwayat(peg.nama, laporanBulan)}>
+                                            <td className="px-4 py-3 font-bold text-neutral-800">{peg.nama}</td>
+                                            <td className="px-4 py-3">
+                                              <span className="bg-red-50 text-[#cc0000] px-2 py-0.5 rounded font-extrabold text-[9px] uppercase tracking-wider">
+                                                {peg.posisi || "Admin"}
+                                              </span>
+                                            </td>
+                                            <td className="px-4 py-3">{peg.jumlahMasuk} Hari</td>
+                                            <td className="px-4 py-3 font-mono text-neutral-600 font-bold">{peg.totalJamKerja || "0j 0m"}</td>
+                                            <td className="px-4 py-3 text-purple-600 font-bold">{peg.jumlahJamLembur ? `${peg.jumlahJamLembur} Jam` : "0 Jam"}</td>
+                                            <td className="px-4 py-3">
+                                              {peg.jumlahTelat > 0 ? (
+                                                <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded font-bold text-[10px]">
+                                                  {peg.jumlahTelat}x Telat
+                                                </span>
+                                              ) : (
+                                                <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded font-bold text-[10px]">
+                                                  Tepat Waktu
+                                                </span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))
+                                      ) : (
+                                        <tr>
+                                          <td colSpan={6} className="px-4 py-4 text-center text-neutral-450">Tidak ada data kontribusi pegawai.</td>
+                                        </tr>
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
                     </>
                   )}
                   </div>
@@ -2343,17 +2580,63 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header Modal */}
-              <div className="p-4 border-b border-neutral-100 flex items-center justify-between bg-neutral-50 font-sans">
-                <div>
-                  <h3 className="font-bold text-neutral-800 text-lg">{selectedPegawaiDetail.nama}</h3>
-                  <p className="text-xs text-neutral-500 font-medium">Bulan: {selectedPegawaiDetail.bulan}</p>
+              <div className="p-4 border-b border-neutral-100 bg-neutral-50 font-sans">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-bold text-neutral-800 text-lg">{selectedPegawaiDetail.nama}</h3>
+                    <p className="text-xs text-neutral-500 font-semibold">Bulan: {selectedPegawaiDetail.bulan}</p>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedPegawaiDetail(null)}
+                    className="p-2 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200 rounded-full transition cursor-pointer shrink-0"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
-                <button 
-                  onClick={() => setSelectedPegawaiDetail(null)}
-                  className="p-2 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200 rounded-full transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+
+                {!loadingDetail && detailRiwayat.length > 0 && (() => {
+                  const posSummaries = getSummaryByPosition(detailRiwayat);
+                  return (
+                    <div className="mt-3.5 grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
+                      {posSummaries.map((ps) => (
+                        <div key={ps.posisi} className="bg-white border border-neutral-200 rounded-xl p-3 shadow-sm flex flex-col justify-between">
+                          <div>
+                            <div className="text-xs font-bold text-neutral-800 border-b border-neutral-100 pb-1.5 mb-2 flex items-center justify-between">
+                              <span className="bg-red-50 text-[#cc0000] px-2 py-0.5 rounded-md font-extrabold uppercase text-[10px]">
+                                {ps.posisi}
+                              </span>
+                              <span className="text-[10px] text-neutral-500 font-semibold">({ps.jumlahMasuk} Hari Kerja)</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] text-neutral-600 font-semibold">
+                              <div className="flex justify-between border-b border-neutral-50 pb-0.5">
+                                <span className="text-neutral-400 font-medium">Masuk:</span>
+                                <span className="text-emerald-600 font-black">{ps.jumlahMasuk} H</span>
+                              </div>
+                              <div className="flex justify-between border-b border-neutral-50 pb-0.5">
+                                <span className="text-neutral-400 font-medium">Lembur:</span>
+                                <span className="text-purple-600 font-black">{ps.jumlahLembur} Jam</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-neutral-400 font-medium">Telat:</span>
+                                <span className="text-red-500 font-black">{ps.jumlahTelat} x</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-neutral-400 font-medium">Izin/Sakit:</span>
+                                <span className="text-amber-600 font-black">{ps.jumlahIzin} H</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-3 pt-2 border-t border-dashed border-neutral-100 flex justify-between items-center text-[11px]">
+                            <span className="text-neutral-400 font-medium">Total Durasi:</span>
+                            <span className="font-mono font-bold text-neutral-800 bg-neutral-100 px-1.5 py-0.5 rounded text-[10px]">
+                              {Math.floor(ps.totalMenit / 60)}j {ps.totalMenit % 60}m
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
 
 
