@@ -1347,6 +1347,7 @@ export default function App() {
                 <option value="Admin">Admin</option>
                 <option value="Admin (Training)">Admin (Training)</option>
                 <option value="Pickup">Pickup</option>
+                <option value="Magang">Magang</option>
               </select>
             </div>
 
