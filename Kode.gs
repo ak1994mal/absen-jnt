@@ -265,6 +265,31 @@ function getSettings() {
   if (requireLocationVal !== "") {
     requireLocation = requireLocationVal === true || requireLocationVal === "TRUE" || requireLocationVal === "true";
   }
+
+  // Mengambil data posisi
+  let positions = [];
+  let sheetPosisi = ss.getSheetByName("DataPosisi");
+  if (sheetPosisi) {
+    const pValues = sheetPosisi.getDataRange().getValues();
+    for (let i = 1; i < pValues.length; i++) {
+      if (pValues[i][0]) {
+        positions.push(pValues[i][0].toString().trim());
+      }
+    }
+  }
+  if (positions.length === 0) {
+    const b4 = sheet.getRange("B4").getValue();
+    if (b4) {
+      try {
+        positions = JSON.parse(b4);
+      } catch(e) {
+        positions = b4.toString().split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+      }
+    }
+  }
+  if (!positions || positions.length === 0) {
+    positions = ["Admin", "Admin (Training)", "Pickup", "Magang"];
+  }
   
   // Mengambil data outlet
   let sheetOutlet = ss.getSheetByName("DataOutlet");
@@ -287,7 +312,7 @@ function getSettings() {
     }
   }
 
-  return { status: "success", data: { favicon: faviconUrl, requireLocation: requireLocation, outlets: outlets } };
+  return { status: "success", data: { favicon: faviconUrl, requireLocation: requireLocation, outlets: outlets, positions: positions } };
 }
 
 function saveSettings(data) {
@@ -300,6 +325,25 @@ function saveSettings(data) {
   // Set requireLocation ke B3
   if (data.requireLocation !== undefined) {
     sheet.getRange("B3").setValue(data.requireLocation ? "TRUE" : "FALSE");
+  }
+
+  // Update positions if provided
+  if (data.positions && Array.isArray(data.positions)) {
+    let sheetPosisi = ss.getSheetByName("DataPosisi");
+    if (!sheetPosisi) {
+      sheetPosisi = ss.insertSheet("DataPosisi");
+    }
+    sheetPosisi.getRange(1, 1).setValue("Nama Posisi");
+    const lastRow = sheetPosisi.getLastRow();
+    if (lastRow > 1) {
+      sheetPosisi.getRange(2, 1, lastRow - 1, 1).clearContent();
+    }
+    data.positions.forEach(function(pos, idx) {
+      if (pos) {
+        sheetPosisi.getRange(idx + 2, 1).setValue(pos.toString().trim());
+      }
+    });
+    sheet.getRange("B4").setValue(JSON.stringify(data.positions));
   }
   
   // Update outlets if provided

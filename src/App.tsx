@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, MapPin, Send, AlertCircle, LocateFixed, CheckCircle2, FileImage, ClipboardList, History, Users, Bell, X, LogOut, RefreshCw, BarChart3, CalendarDays, Clock, ExternalLink, Store } from 'lucide-react';
+import { Camera, MapPin, Send, AlertCircle, LocateFixed, CheckCircle2, FileImage, ClipboardList, History, Users, Bell, X, LogOut, RefreshCw, BarChart3, CalendarDays, Clock, ExternalLink, Store, Briefcase, Plus, Pencil, Trash2, Check } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import OutletMapManager from './components/OutletMapManager';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
@@ -147,7 +147,8 @@ export const getDirectDriveUrl = (url: string | null | undefined): string => {
 
 
 type StatusAbsen = "DATANG" | "PULANG" | "IZIN";
-type PosisiPegawai = "Admin" | "Admin (Training)" | "Pickup" | "";
+type PosisiPegawai = string;
+export const DEFAULT_POSITIONS = ["Admin", "Admin (Training)", "Pickup", "Magang"];
 
 
 const updateFavicon = (url: string) => {
@@ -287,6 +288,7 @@ export default function App() {
     } catch (e) {}
     return {
       requireLocation: true,
+      positions: DEFAULT_POSITIONS,
       outlets: [
         { nama: "YZ_ MDP PASIR JAHA BALARAJA", lat: -6.205649180689262, lng: 106.45134398119775, radius: 150 },
         { nama: "YZ_ MDP JAYANTI CIKANDE", lat: -6.206571510648256, lng: 106.38621792361727, radius: 150 }
@@ -296,6 +298,14 @@ export default function App() {
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [errorSettings, setErrorSettings] = useState("");
   const [faviconError, setFaviconError] = useState(false);
+
+  const [newPosisiInput, setNewPosisiInput] = useState("");
+  const [editingPosisiIndex, setEditingPosisiIndex] = useState<number | null>(null);
+  const [editingPosisiValue, setEditingPosisiValue] = useState("");
+
+  const availablePositions: string[] = (settingsData?.positions && Array.isArray(settingsData.positions) && settingsData.positions.length > 0)
+    ? settingsData.positions
+    : DEFAULT_POSITIONS;
 
   const fetchWithRetry = async (url: string, options?: RequestInit, retries = 2): Promise<Response> => {
     let lastErr: any;
@@ -845,6 +855,104 @@ export default function App() {
     }
   };
 
+  const handleUpdatePositions = async (updatedPositions: string[]) => {
+    const rawReq = settingsData?.requireLocation;
+    const isCurrentlyReq = rawReq === true || rawReq === 'TRUE' || rawReq === 'true' || rawReq === undefined || rawReq === null;
+
+    const updatedSettings = {
+      ...settingsData,
+      requireLocation: isCurrentlyReq,
+      positions: updatedPositions
+    };
+    setSettingsData(updatedSettings);
+    try {
+      localStorage.setItem("settingsData_offline", JSON.stringify(updatedSettings));
+    } catch (e) {}
+
+    if (!GAS_URL) {
+      toast.success("Daftar posisi berhasil disimpan (Mode Preview).");
+      return;
+    }
+
+    setSavingSettings(true);
+    const loadingToastId = toast.loading("Menyimpan daftar posisi...");
+    try {
+      const payload = {
+        action: 'saveSettings',
+        data: { 
+          requireLocation: isCurrentlyReq,
+          outlets: settingsData?.outlets || [],
+          positions: updatedPositions
+        }
+      };
+      const response = await fetch(GAS_URL, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (result.status === "success") {
+        toast.success("Daftar posisi berhasil disimpan ke Google Sheets.", { id: loadingToastId });
+      } else {
+        toast.error(`Gagal menyimpan posisi: ${result.message}`, { id: loadingToastId });
+      }
+    } catch (e: any) {
+        toast.error(`Error menyimpan posisi: ${e.message}`, { id: loadingToastId });
+    } finally {
+        setSavingSettings(false);
+    }
+  };
+
+  const handleAddPosisi = () => {
+    const trimmed = newPosisiInput.trim();
+    if (!trimmed) {
+      toast.error("Nama posisi tidak boleh kosong.");
+      return;
+    }
+    if (availablePositions.some(p => p.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error(`Posisi "${trimmed}" sudah ada.`);
+      return;
+    }
+
+    const updated = [...availablePositions, trimmed];
+    setNewPosisiInput("");
+    handleUpdatePositions(updated);
+    toast.success(`Posisi "${trimmed}" berhasil ditambahkan.`);
+  };
+
+  const handleStartEditPosisi = (index: number, val: string) => {
+    setEditingPosisiIndex(index);
+    setEditingPosisiValue(val);
+  };
+
+  const handleSaveEditPosisi = (index: number) => {
+    const trimmed = editingPosisiValue.trim();
+    if (!trimmed) {
+      toast.error("Nama posisi tidak boleh kosong.");
+      return;
+    }
+    if (availablePositions.some((p, i) => i !== index && p.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error(`Posisi "${trimmed}" sudah ada.`);
+      return;
+    }
+
+    const updated = [...availablePositions];
+    updated[index] = trimmed;
+    setEditingPosisiIndex(null);
+    setEditingPosisiValue("");
+    handleUpdatePositions(updated);
+  };
+
+  const handleDeletePosisi = (index: number) => {
+    if (availablePositions.length <= 1) {
+      toast.error("Minimal harus ada 1 posisi terdaftar.");
+      return;
+    }
+    const removedName = availablePositions[index];
+    const updated = availablePositions.filter((_, i) => i !== index);
+    handleUpdatePositions(updated);
+    toast.success(`Posisi "${removedName}" berhasil dihapus.`);
+  };
+
   const fetchSettings = async () => {
     setLoadingSettings(true);
     setErrorSettings("");
@@ -862,6 +970,9 @@ export default function App() {
         const d = data.data || {};
         const rawReq = d.requireLocation;
         d.requireLocation = rawReq === true || rawReq === 'TRUE' || rawReq === 'true' || rawReq === undefined || rawReq === null;
+        if (!d.positions || !Array.isArray(d.positions) || d.positions.length === 0) {
+          d.positions = DEFAULT_POSITIONS;
+        }
         setSettingsData(d);
         try {
           localStorage.setItem("settingsData_offline", JSON.stringify(d));
@@ -1341,13 +1452,12 @@ export default function App() {
                 value={posisi} 
                 onChange={e => setPosisi(e.target.value as PosisiPegawai)}
                 disabled={keterangan === 'PULANG'}
-                className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-md focus:ring-2 focus:ring-[#cc0000] outline-none transition disabled:opacity-60 disabled:bg-neutral-100"
+                className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-md focus:ring-2 focus:ring-[#cc0000] outline-none transition disabled:opacity-60 disabled:bg-neutral-100 font-medium text-neutral-800"
               >
                 <option value="" disabled>Pilih Posisi</option>
-                <option value="Admin">Admin</option>
-                <option value="Admin (Training)">Admin (Training)</option>
-                <option value="Pickup">Pickup</option>
-                <option value="Magang">Magang</option>
+                {availablePositions.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
               </select>
             </div>
 
@@ -2121,9 +2231,9 @@ export default function App() {
                          className="p-2 text-sm bg-neutral-50 border border-neutral-300 rounded-md focus:ring-2 focus:ring-[#cc0000] outline-none font-medium text-neutral-700 h-[38px]"
                        >
                          <option value="Semua">Semua Posisi</option>
-                         <option value="Admin">Admin</option>
-                         <option value="Admin (Training)">Admin (Training)</option>
-                         <option value="Pickup">Pickup</option>
+                         {availablePositions.map((p) => (
+                           <option key={p} value={p}>{p}</option>
+                         ))}
                        </select>
                        <input 
                          type="month" 
@@ -2511,8 +2621,117 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Right Panel: Interactive Outlet Map & Radius Editor */}
-                      <div className="flex-1 w-full min-w-0">
+                      {/* Right Panel: Position Manager & Interactive Outlet Map */}
+                      <div className="flex-1 w-full min-w-0 flex flex-col gap-6">
+                        {/* Kelola Posisi Pegawai */}
+                        <div className="bg-white border border-neutral-200 rounded-xl p-5 shadow-sm">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-neutral-100">
+                            <div className="flex items-center gap-2.5">
+                              <div className="p-2 bg-red-50 text-[#cc0000] rounded-lg border border-red-100">
+                                <Briefcase className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h3 className="font-bold text-neutral-800 text-base">Kelola Posisi Pegawai</h3>
+                                <p className="text-xs text-neutral-500">Tambah, edit, atau hapus daftar posisi yang dapat dipilih pegawai saat absen.</p>
+                              </div>
+                            </div>
+                            <span className="self-start sm:self-auto text-xs font-bold px-2.5 py-1 bg-neutral-100 text-neutral-700 rounded-full border border-neutral-200">
+                              {availablePositions.length} Posisi
+                            </span>
+                          </div>
+
+                          {/* Form Tambah Posisi */}
+                          <div className="flex items-center gap-2 mb-5">
+                            <input
+                              type="text"
+                              value={newPosisiInput}
+                              onChange={(e) => setNewPosisiInput(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleAddPosisi(); }}
+                              placeholder="Ketik nama posisi baru (misal: Kurir, Supervisor, Driver)..."
+                              className="flex-1 p-2.5 text-sm bg-neutral-50 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-[#cc0000] focus:bg-white outline-none transition"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleAddPosisi}
+                              disabled={savingSettings}
+                              className="px-4 py-2.5 bg-[#cc0000] hover:bg-red-700 text-white font-bold text-sm rounded-lg shadow-sm flex items-center gap-1.5 transition shrink-0 disabled:opacity-50"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span>Tambah Posisi</span>
+                            </button>
+                          </div>
+
+                          {/* List Posisi */}
+                          <div className="overflow-hidden border border-neutral-200 rounded-xl bg-neutral-50/50">
+                            <div className="divide-y divide-neutral-200">
+                              {availablePositions.map((pos, idx) => (
+                                <div key={idx} className="p-3.5 bg-white flex items-center justify-between gap-3 hover:bg-neutral-50 transition">
+                                  {editingPosisiIndex === idx ? (
+                                    <div className="flex items-center gap-2 flex-1">
+                                      <input
+                                        type="text"
+                                        value={editingPosisiValue}
+                                        onChange={(e) => setEditingPosisiValue(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEditPosisi(idx); if (e.key === 'Escape') setEditingPosisiIndex(null); }}
+                                        className="flex-1 p-2 text-sm bg-white border border-[#cc0000] rounded-md focus:ring-2 focus:ring-[#cc0000] outline-none font-semibold text-neutral-800"
+                                        autoFocus
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveEditPosisi(idx)}
+                                        className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition text-xs font-bold flex items-center gap-1 shadow-sm"
+                                        title="Simpan"
+                                      >
+                                        <Check className="w-4 h-4" />
+                                        <span>Simpan</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingPosisiIndex(null)}
+                                        className="p-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 rounded-md transition text-xs font-bold"
+                                        title="Batal"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-6 h-6 rounded-full bg-red-50 text-[#cc0000] font-mono text-xs font-extrabold flex items-center justify-center border border-red-100">
+                                          {idx + 1}
+                                        </span>
+                                        <span className="font-bold text-neutral-800 text-sm">{pos}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartEditPosisi(idx, pos)}
+                                          disabled={savingSettings}
+                                          className="p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-md transition flex items-center gap-1 text-xs font-medium border border-transparent hover:border-neutral-200"
+                                          title="Edit Posisi"
+                                        >
+                                          <Pencil className="w-3.5 h-3.5 text-neutral-500" />
+                                          <span className="hidden sm:inline">Edit</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeletePosisi(idx)}
+                                          disabled={savingSettings}
+                                          className="p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition flex items-center gap-1 text-xs font-medium border border-transparent hover:border-red-100"
+                                          title="Hapus Posisi"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                          <span className="hidden sm:inline">Hapus</span>
+                                        </button>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
                         <OutletMapManager 
                           outlets={settingsData.outlets || EMPTY_ARRAY}
                           onSaveOutlets={handleUpdateOutlets}
