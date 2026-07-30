@@ -273,7 +273,13 @@ function getSettings() {
     const pValues = sheetPosisi.getDataRange().getValues();
     for (let i = 1; i < pValues.length; i++) {
       if (pValues[i][0]) {
-        positions.push(pValues[i][0].toString().trim());
+        let jamMasuk = pValues[i][1] ? pValues[i][1].toString().trim() : "08:00";
+        let jamPulang = pValues[i][2] ? pValues[i][2].toString().trim() : "20:00";
+        positions.push({
+          name: pValues[i][0].toString().trim(),
+          jamMasuk: jamMasuk,
+          jamPulang: jamPulang
+        });
       }
     }
   }
@@ -281,14 +287,27 @@ function getSettings() {
     const b4 = sheet.getRange("B4").getValue();
     if (b4) {
       try {
-        positions = JSON.parse(b4);
+        let parsed = JSON.parse(b4);
+        positions = parsed.map(function(p) {
+          if (typeof p === 'string') {
+            return { name: p, jamMasuk: "08:00", jamPulang: "20:00" };
+          }
+          return p;
+        });
       } catch(e) {
-        positions = b4.toString().split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+        positions = b4.toString().split(",").map(function(s) { 
+          return { name: s.trim(), jamMasuk: "08:00", jamPulang: "20:00" };
+        }).filter(function(p) { return p.name !== ""; });
       }
     }
   }
   if (!positions || positions.length === 0) {
-    positions = ["Admin", "Admin (Training)", "Pickup", "Magang"];
+    positions = [
+      { name: "Admin", jamMasuk: "08:00", jamPulang: "20:00" },
+      { name: "Admin (Training)", jamMasuk: "08:00", jamPulang: "20:00" },
+      { name: "Pickup", jamMasuk: "14:00", jamPulang: "22:00" },
+      { name: "Magang", jamMasuk: "08:00", jamPulang: "17:00" }
+    ];
   }
   
   // Mengambil data outlet
@@ -333,14 +352,21 @@ function saveSettings(data) {
     if (!sheetPosisi) {
       sheetPosisi = ss.insertSheet("DataPosisi");
     }
-    sheetPosisi.getRange(1, 1).setValue("Nama Posisi");
+    sheetPosisi.getRange(1, 1, 1, 3).setValues([["Nama Posisi", "Jam Masuk", "Jam Pulang"]]);
     const lastRow = sheetPosisi.getLastRow();
     if (lastRow > 1) {
-      sheetPosisi.getRange(2, 1, lastRow - 1, 1).clearContent();
+      sheetPosisi.getRange(2, 1, lastRow - 1, 3).clearContent();
     }
     data.positions.forEach(function(pos, idx) {
       if (pos) {
-        sheetPosisi.getRange(idx + 2, 1).setValue(pos.toString().trim());
+        let name = typeof pos === 'string' ? pos.trim() : (pos.name || "").trim();
+        let jamMasuk = typeof pos === 'object' && pos.jamMasuk ? pos.jamMasuk : "08:00";
+        let jamPulang = typeof pos === 'object' && pos.jamPulang ? pos.jamPulang : "20:00";
+        if (name) {
+          sheetPosisi.getRange(idx + 2, 1).setValue(name);
+          sheetPosisi.getRange(idx + 2, 2).setValue(jamMasuk);
+          sheetPosisi.getRange(idx + 2, 3).setValue(jamPulang);
+        }
       }
     });
     sheet.getRange("B4").setValue(JSON.stringify(data.positions));

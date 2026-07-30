@@ -148,7 +148,18 @@ export const getDirectDriveUrl = (url: string | null | undefined): string => {
 
 type StatusAbsen = "DATANG" | "PULANG" | "IZIN";
 type PosisiPegawai = string;
-export const DEFAULT_POSITIONS = ["Admin", "Admin (Training)", "Pickup", "Magang"];
+export type PositionConfig = {
+  name: string;
+  jamMasuk: string;
+  jamPulang: string;
+};
+
+export const DEFAULT_POSITIONS: PositionConfig[] = [
+  { name: "Admin", jamMasuk: "08:00", jamPulang: "20:00" },
+  { name: "Admin (Training)", jamMasuk: "08:00", jamPulang: "20:00" },
+  { name: "Pickup", jamMasuk: "14:00", jamPulang: "22:00" },
+  { name: "Magang", jamMasuk: "08:00", jamPulang: "17:00" }
+];
 
 
 const updateFavicon = (url: string) => {
@@ -303,8 +314,13 @@ export default function App() {
   const [editingPosisiIndex, setEditingPosisiIndex] = useState<number | null>(null);
   const [editingPosisiValue, setEditingPosisiValue] = useState("");
 
-  const availablePositions: string[] = (settingsData?.positions && Array.isArray(settingsData.positions) && settingsData.positions.length > 0)
-    ? settingsData.positions
+  const availablePositions: PositionConfig[] = (settingsData?.positions && Array.isArray(settingsData.positions) && settingsData.positions.length > 0)
+    ? settingsData.positions.map((p: any) => {
+        if (typeof p === 'string') {
+          return { name: p, jamMasuk: "08:00", jamPulang: "20:00" };
+        }
+        return p;
+      })
     : DEFAULT_POSITIONS;
 
   const fetchWithRetry = async (url: string, options?: RequestInit, retries = 2): Promise<Response> => {
@@ -855,7 +871,7 @@ export default function App() {
     }
   };
 
-  const handleUpdatePositions = async (updatedPositions: string[]) => {
+  const handleUpdatePositions = async (updatedPositions: PositionConfig[]) => {
     const rawReq = settingsData?.requireLocation;
     const isCurrentlyReq = rawReq === true || rawReq === 'TRUE' || rawReq === 'true' || rawReq === undefined || rawReq === null;
 
@@ -908,12 +924,12 @@ export default function App() {
       toast.error("Nama posisi tidak boleh kosong.");
       return;
     }
-    if (availablePositions.some(p => p.toLowerCase() === trimmed.toLowerCase())) {
+    if (availablePositions.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
       toast.error(`Posisi "${trimmed}" sudah ada.`);
       return;
     }
 
-    const updated = [...availablePositions, trimmed];
+    const updated = [...availablePositions, { name: trimmed, jamMasuk: "08:00", jamPulang: "20:00" }];
     setNewPosisiInput("");
     handleUpdatePositions(updated);
     toast.success(`Posisi "${trimmed}" berhasil ditambahkan.`);
@@ -930,13 +946,13 @@ export default function App() {
       toast.error("Nama posisi tidak boleh kosong.");
       return;
     }
-    if (availablePositions.some((p, i) => i !== index && p.toLowerCase() === trimmed.toLowerCase())) {
+    if (availablePositions.some((p, i) => i !== index && p.name.toLowerCase() === trimmed.toLowerCase())) {
       toast.error(`Posisi "${trimmed}" sudah ada.`);
       return;
     }
 
     const updated = [...availablePositions];
-    updated[index] = trimmed;
+    updated[index] = { ...updated[index], name: trimmed };
     setEditingPosisiIndex(null);
     setEditingPosisiValue("");
     handleUpdatePositions(updated);
@@ -947,7 +963,7 @@ export default function App() {
       toast.error("Minimal harus ada 1 posisi terdaftar.");
       return;
     }
-    const removedName = availablePositions[index];
+    const removedName = availablePositions[index].name;
     const updated = availablePositions.filter((_, i) => i !== index);
     handleUpdatePositions(updated);
     toast.success(`Posisi "${removedName}" berhasil dihapus.`);
@@ -1456,7 +1472,7 @@ export default function App() {
               >
                 <option value="" disabled>Pilih Posisi</option>
                 {availablePositions.map((p) => (
-                  <option key={p} value={p}>{p}</option>
+                  <option key={p.name} value={p.name}>{p.name}</option>
                 ))}
               </select>
             </div>
@@ -2232,7 +2248,7 @@ export default function App() {
                        >
                          <option value="Semua">Semua Posisi</option>
                          {availablePositions.map((p) => (
-                           <option key={p} value={p}>{p}</option>
+                           <option key={p.name} value={p.name}>{p.name}</option>
                          ))}
                        </select>
                        <input 
@@ -2667,7 +2683,7 @@ export default function App() {
                               {availablePositions.map((pos, idx) => (
                                 <div key={idx} className="p-3.5 bg-white flex items-center justify-between gap-3 hover:bg-neutral-50 transition">
                                   {editingPosisiIndex === idx ? (
-                                    <div className="flex items-center gap-2 flex-1">
+                                    <div className="flex flex-col gap-2 flex-1">
                                       <input
                                         type="text"
                                         value={editingPosisiValue}
@@ -2676,36 +2692,62 @@ export default function App() {
                                         className="flex-1 p-2 text-sm bg-white border border-[#cc0000] rounded-md focus:ring-2 focus:ring-[#cc0000] outline-none font-semibold text-neutral-800"
                                         autoFocus
                                       />
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSaveEditPosisi(idx)}
-                                        className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition text-xs font-bold flex items-center gap-1 shadow-sm"
-                                        title="Simpan"
-                                      >
-                                        <Check className="w-4 h-4" />
-                                        <span>Simpan</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditingPosisiIndex(null)}
-                                        className="p-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 rounded-md transition text-xs font-bold"
-                                        title="Batal"
-                                      >
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <div className="flex items-center gap-2.5">
-                                        <span className="w-6 h-6 rounded-full bg-red-50 text-[#cc0000] font-mono text-xs font-extrabold flex items-center justify-center border border-red-100">
-                                          {idx + 1}
-                                        </span>
-                                        <span className="font-bold text-neutral-800 text-sm">{pos}</span>
+                                      <div className="flex gap-2">
+                                        <div className="flex-1 flex items-center gap-2">
+                                          <label className="text-xs text-neutral-500 w-16">Masuk:</label>
+                                          <input type="time" value={pos.jamMasuk} onChange={(e) => {
+                                            const updated = [...availablePositions];
+                                            updated[idx].jamMasuk = e.target.value;
+                                            handleUpdatePositions(updated);
+                                          }} className="p-1 border rounded text-xs" />
+                                        </div>
+                                        <div className="flex-1 flex items-center gap-2">
+                                          <label className="text-xs text-neutral-500 w-16">Pulang:</label>
+                                          <input type="time" value={pos.jamPulang} onChange={(e) => {
+                                            const updated = [...availablePositions];
+                                            updated[idx].jamPulang = e.target.value;
+                                            handleUpdatePositions(updated);
+                                          }} className="p-1 border rounded text-xs" />
+                                        </div>
                                       </div>
-                                      <div className="flex items-center gap-1.5">
+                                      <div className="flex gap-2 justify-end mt-1">
                                         <button
                                           type="button"
-                                          onClick={() => handleStartEditPosisi(idx, pos)}
+                                          onClick={() => handleSaveEditPosisi(idx)}
+                                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition text-xs font-bold flex items-center gap-1 shadow-sm"
+                                          title="Simpan"
+                                        >
+                                          <Check className="w-3.5 h-3.5" />
+                                          <span>Simpan</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingPosisiIndex(null)}
+                                          className="px-3 py-1.5 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 rounded-md transition text-xs font-bold"
+                                          title="Batal"
+                                        >
+                                          <span>Batal</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center justify-between w-full">
+                                      <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-2.5">
+                                          <span className="w-6 h-6 rounded-full bg-red-50 text-[#cc0000] font-mono text-xs font-extrabold flex items-center justify-center border border-red-100">
+                                            {idx + 1}
+                                          </span>
+                                          <span className="font-bold text-neutral-800 text-sm">{pos.name}</span>
+                                        </div>
+                                        <div className="flex items-center gap-3 pl-8 text-xs text-neutral-500">
+                                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Masuk: <strong className="text-neutral-700">{pos.jamMasuk}</strong></span>
+                                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Pulang: <strong className="text-neutral-700">{pos.jamPulang}</strong></span>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartEditPosisi(idx, pos.name)}
                                           disabled={savingSettings}
                                           className="p-1.5 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-md transition flex items-center gap-1 text-xs font-medium border border-transparent hover:border-neutral-200"
                                           title="Edit Posisi"
@@ -2724,7 +2766,7 @@ export default function App() {
                                           <span className="hidden sm:inline">Hapus</span>
                                         </button>
                                       </div>
-                                    </>
+                                    </div>
                                   )}
                                 </div>
                               ))}
